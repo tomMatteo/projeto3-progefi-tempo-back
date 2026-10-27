@@ -221,3 +221,5 @@ __marimo__/
 .streamlit/secrets.toml
 =======
 .venv
+.env
+>>>>>>> 9563da1 (feat: busca coordenadas no nominatim, busca previsão de tempo no open_meteo, aloca roupas baseado nas roupas recebidas, e retorna plano feito baseado no roteiro envidado.)

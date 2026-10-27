@@ -1,8 +1,6 @@
-from utils import (
-    load_items, save_item,
-    load_trip, save_trip, update_trip,
-    address_to_coords, get_forecast
-)
+import logging
+from pymongo.errors import PyMongoError
+from utils import address_to_coords, get_forecast, save_forecast 
 
 def _normalize(address):
     """'  Copacabana,  RIO ' -> 'copacabana, rio' so trivial differences count as copies."""
@@ -22,6 +20,10 @@ def forecast_for_itinerary(itinerary):
     for addr in unique:
         lat, lon = address_to_coords(addr)
         forecasts[addr] = get_forecast(lat, lon)
+        try:
+            save_forecast(lat, lon, forecasts[addr])
+        except PyMongoError as e:
+            logging.warning("Could not save forecast: %s", e)
 
     # 3) Link each day to its address and that address's max and min
     result = {}

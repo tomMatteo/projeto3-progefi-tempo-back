@@ -111,7 +111,7 @@ def get_forecast(lat, lon):
         params={
             "latitude": lat,
             "longitude": lon,
-            "daily": "temperature_2m_max,temperature_2m_min","rain"
+            "daily": "apparent_temperature_max,apparent_temperature_min,precipitation_probability_max",
             "forecast_days": 16,
             "timezone": "auto",
         },
@@ -120,9 +120,11 @@ def get_forecast(lat, lon):
     r.raise_for_status()
     daily = r.json()["daily"]
     return {
-        day: {"max": tmax, "min": tmin}
-        for day, tmax, tmin in zip(
-            daily["time"], daily["temperature_2m_max"], daily["temperature_2m_min"]
+        day: {"max": tmax, "min": tmin, "rain": rain}
+        for day, tmax, tmin, rain in zip(
+            daily["time"], daily["apparent_temperature_max"],
+            daily["apparent_temperature_min"],
+            daily["precipitation_probability_max"],
         )
     }
 

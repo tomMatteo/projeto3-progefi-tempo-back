@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -218,3 +219,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+=======
+.venv
+.env
+>>>>>>> 9563da1 (feat: busca coordenadas no nominatim, busca previsão de tempo no open_meteo, aloca roupas baseado nas roupas recebidas, e retorna plano feito baseado no roteiro envidado.)

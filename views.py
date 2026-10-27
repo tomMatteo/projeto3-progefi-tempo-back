@@ -31,6 +31,7 @@ def forecast_for_itinerary(itinerary):
             "address": addr,
             "max": day["max"] if day else None,
             "min": day["min"] if day else None,
+            "rain": day["rain"] if day else None,
         }
     return result
 
@@ -65,6 +66,7 @@ def plan_outfits(clothes, forecast, average_temp):
         "second_skin": -10,  # d_min <= -10: add second skin
         "heavy_coat": -14,   # d_min <= -14: heavy coat instead of coat, and gloves
     }
+    RAIN_WARNING_PROB = 60
     stock = dict(clothes)  # copy, so the caller's dict is not changed
 
     # Temperature of each day relative to the user's average
@@ -108,7 +110,9 @@ def plan_outfits(clothes, forecast, average_temp):
         if d_min <= THRESHOLDS["heavy_coat"]:
             if not _take(stock, "gloves", outfit):
                 notes.append("Very cold day but no gloves left")
-
+        rain = forecast[date]["rain"]
+        if rain is not None and rain >= RAIN_WARNING_PROB:
+            notes.append(f"High chance of rain ({rain}%): Prepare acoordingly")
         result[date] = {"outfit": outfit, "notes": notes}
 
     return dict(sorted(result.items()))  # back to date order

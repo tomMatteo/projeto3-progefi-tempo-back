@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 
-from views import forecast_for_itinerary, plan_outfits
+from views import forecast_for_itinerary, plan_outfits,  startup_check
 
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173"])  # Vite's default dev port
@@ -36,4 +36,5 @@ def make_plan():
 
 
 if __name__ == "__main__":
+    startup_check()
     app.run(debug=True)

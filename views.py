@@ -1,6 +1,6 @@
 import logging
 from pymongo.errors import PyMongoError
-from utils import address_to_coords, get_forecast, save_forecast 
+from utils import address_to_coords, get_forecast, save_forecast, check_db
 
 def _normalize(address):
     """'  Copacabana,  RIO ' -> 'copacabana, rio' so trivial differences count as copies."""
@@ -118,3 +118,7 @@ def plan_outfits(clothes, forecast, average_temp):
         result[date] = {"outfit": outfit, "notes": notes}
 
     return dict(sorted(result.items()))  # back to date order
+
+def startup_check():                                                        # NEW
+    """Checks the database connection when the server starts."""
+    return check_db()

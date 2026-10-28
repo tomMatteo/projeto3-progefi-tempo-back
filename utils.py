@@ -14,11 +14,15 @@ _last_call = 0.0  # time of the last Nominatim request
 _client = MongoClient(os.environ["MONGO_URI"], serverSelectionTimeoutMS=5000)
 db = _client["trip_planner"]
 
-try:
-    _client.admin.command("ping")
-    print("MongoDB connected")
-except PyMongoError as e:
-    print(f"MongoDB connection failed: {e}")
+def check_db():
+    """Pings MongoDB. Returns True if reachable, False otherwise."""
+    try:
+        _client.admin.command("ping")
+        print("MongoDB connected")
+        return True
+    except PyMongoError as e:
+        print(f"MongoDB connection failed: {e}")
+        return False
 
 
 def save_forecast(lat, lon, forecast):

@@ -1,7 +1,7 @@
 import logging
 from pymongo.errors import PyMongoError
-from utils import (address_to_coords, get_forecast,
-                save_forecast, check_db, delete_past_forecasts)
+from utils import (address_to_coords, get_forecast, save_forecast, 
+                check_db, delete_past_forecasts, load_forecast)
 
 def _normalize(address):
     """'  Copacabana,  RIO ' -> 'copacabana, rio' so trivial differences count as copies."""
@@ -14,17 +14,29 @@ def forecast_for_itinerary(itinerary):
     Raises ValueError (address not found) or requests.RequestException (API down)."""
 
     # 1) Remove copies: one entry per distinct address
-    unique = {_normalize(addr) for addr in itinerary.values()}
+    dates_by_addr = {}
+    for date, addr in itinerary.items():
+        dates_by_addr.setdefault(_normalize(addr), set()).add(date)
 
     # 2) Per distinct address: coordinates first, then the forecast
     forecasts = {}
-    for addr in unique:
+    for addr, dates in dates_by_addr.items():
         lat, lon = address_to_coords(addr)
-        forecasts[addr] = get_forecast(lat, lon)
+
         try:
-            save_forecast(lat, lon, forecasts[addr])
+            cached = load_forecast(lat, lon, dates)
         except PyMongoError as e:
-            logging.warning("Could not save forecast: %s", e)
+            logging.warning("Could not read forecast cache: %s", e)
+            cached = {}
+
+        if dates <= set(cached):
+            forecasts[addr] = cached
+        else:
+            forecasts[addr] = get_forecast(lat, lon)
+            try:
+                save_forecast(lat, lon, forecasts[addr])
+            except PyMongoError as e:
+                logging.warning("Could not save forecast: %s", e)
 
     # 3) Link each day to its address and that address's max and min
     result = {}

@@ -6,6 +6,7 @@ import time
 from dotenv import load_dotenv
 from pymongo import MongoClient, UpdateOne 
 from pymongo.errors import PyMongoError
+from datetime import datetime, timedelta, timezone 
 
 load_dotenv()
 
@@ -109,3 +110,12 @@ def address_to_coords(address):
     if not results:
         raise ValueError(f"could not find address: {text}")
     return float(results[0]["lat"]), float(results[0]["lon"])
+
+def delete_past_forecasts(margin_days=1):
+    """Deletes stored forecast days that have already passed.
+    Returns how many documents were deleted.
+    Raises pymongo.errors.PyMongoError if the database can't be reached."""
+    today = datetime.now(timezone.utc).date()
+    cutoff = (today - timedelta(days=margin_days)).isoformat()
+    result = db.forecasts.delete_many({"date": {"$lt": cutoff}})
+    return result.deleted_count

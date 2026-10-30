@@ -27,11 +27,11 @@ def forecast_for_itinerary(itinerary):
     result = {}
     for date, addr in itinerary.items():
         day = forecasts[_normalize(addr)].get(date)  # None if out of range
-        result[date] = [{
+        result[date] = {
             "address": addr,
             "max": day["max"] if day else None,
             "min": day["min"] if day else None,
-        }]
+        }
     return result
 
 def _take(stock, piece, outfit):

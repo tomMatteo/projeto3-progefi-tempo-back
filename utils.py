@@ -111,7 +111,7 @@ def get_forecast(lat, lon):
         params={
             "latitude": lat,
             "longitude": lon,
-            "daily": "temperature_2m_max,temperature_2m_min","rain"
+            "daily": "temperature_2m_max,temperature_2m_min",
             "forecast_days": 16,
             "timezone": "auto",
         },

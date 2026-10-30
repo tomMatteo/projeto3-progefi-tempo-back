@@ -41,22 +41,24 @@ def save_forecast(lat, lon, forecast):
     if ops:
         db.forecasts.bulk_write(ops)
 
+def delete_past_forecasts(margin_days=1):
+    """Deletes stored forecast days that have already passed.
+    Returns how many documents were deleted.
+    Raises pymongo.errors.PyMongoError if the database can't be reached."""
+    today = datetime.now(timezone.utc).date()
+    cutoff = (today - timedelta(days=margin_days)).isoformat()
+    result = db.forecasts.delete_many({"date": {"$lt": cutoff}})
+    return result.deleted_count
+
+def load_forecast(lat, lon, dates):                                 # NEW
+    """Returns {date: {"max", "min", "rain"}} for the dates already stored for
+    these coordinates. Dates not in the database are simply missing from the result.
+    Raises pymongo.errors.PyMongoError if the database can't be reached."""
+    ids = [f"{lat:.5f},{lon:.5f},{d}" for d in dates]               # same _id format as save_forecast
+    docs = db.forecasts.find({"_id": {"$in": ids}})
+    return {d["date"]: {"max": d["max"], "min": d["min"], "rain": d["rain"]} for d in docs}
+
 # ---------- external APIs ----------
-def geocode(address):
-    """Nominatim: address -> list of {label, lat, lon} candidates."""
-    r = requests.get(
-        "https://nominatim.openstreetmap.org/search",
-        params={"q": address, "format": "jsonv2", "limit": 5, "countrycodes": "br"},
-        headers=UA,
-        timeout=10,
-    )
-    r.raise_for_status()
-    return [
-        {"label": p["display_name"], "lat": float(p["lat"]), "lon": float(p["lon"])}
-        for p in r.json()
-    ]
-
-
 def get_forecast(lat, lon):
     """Coordinates -> {"2026-10-28": {"max": 27.1, "min": 19.4}, ...} (up to 16 days).
     Raises requests.RequestException if Open-Meteo is unreachable or returns an error."""
@@ -110,20 +112,3 @@ def address_to_coords(address):
     if not results:
         raise ValueError(f"could not find address: {text}")
     return float(results[0]["lat"]), float(results[0]["lon"])
-
-def delete_past_forecasts(margin_days=1):
-    """Deletes stored forecast days that have already passed.
-    Returns how many documents were deleted.
-    Raises pymongo.errors.PyMongoError if the database can't be reached."""
-    today = datetime.now(timezone.utc).date()
-    cutoff = (today - timedelta(days=margin_days)).isoformat()
-    result = db.forecasts.delete_many({"date": {"$lt": cutoff}})
-    return result.deleted_count
-
-def load_forecast(lat, lon, dates):                                 # NEW
-    """Returns {date: {"max", "min", "rain"}} for the dates already stored for
-    these coordinates. Dates not in the database are simply missing from the result.
-    Raises pymongo.errors.PyMongoError if the database can't be reached."""
-    ids = [f"{lat:.5f},{lon:.5f},{d}" for d in dates]               # same _id format as save_forecast
-    docs = db.forecasts.find({"_id": {"$in": ids}})
-    return {d["date"]: {"max": d["max"], "min": d["min"], "rain": d["rain"]} for d in docs}

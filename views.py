@@ -1,7 +1,12 @@
 import logging
 from pymongo.errors import PyMongoError
+from apscheduler.schedulers.background import BackgroundScheduler
 from utils import (address_to_coords, get_forecast, save_forecast, 
                 check_db, delete_past_forecasts, load_forecast)
+
+
+_scheduler = None
+
 
 def _normalize(address):
     """'  Copacabana,  RIO ' -> 'copacabana, rio' so trivial differences count as copies."""
@@ -145,3 +150,14 @@ def cleanup_past_forecasts():
     except PyMongoError as e:
         logging.warning("Cleanup failed: %s", e)
         return 0
+
+def start_cleanup_scheduler():
+    """Runs the cleanup once now and then every day at 03:00 UTC. Safe to call twice."""
+    global _scheduler
+    if _scheduler is not None:
+        return
+    _scheduler = BackgroundScheduler(timezone="UTC")
+    _scheduler.add_job(cleanup_past_forecasts)
+    _scheduler.add_job(cleanup_past_forecasts, "cron", hour=3, minute=0,
+                       misfire_grace_time=3600, coalesce=True)         # daily
+    _scheduler.start()

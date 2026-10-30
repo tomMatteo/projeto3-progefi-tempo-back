@@ -1,11 +1,12 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
-
-from views import forecast_for_itinerary, plan_outfits,  startup_check
+import logging 
+from views import forecast_for_itinerary, plan_outfits,  startup_check, start_cleanup_scheduler
 
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173"])  # Vite's default dev port
+start_cleanup_scheduler() 
 
 
 @app.post("/plan")
@@ -34,6 +35,7 @@ def make_plan():
 
     return jsonify(plan), 200
 
+logging.basicConfig(level=logging.INFO) 
 
 if __name__ == "__main__":
     startup_check()

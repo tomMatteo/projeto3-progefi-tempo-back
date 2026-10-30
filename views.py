@@ -1,6 +1,7 @@
 import logging
 from pymongo.errors import PyMongoError
-from utils import address_to_coords, get_forecast, save_forecast, check_db
+from utils import (address_to_coords, get_forecast,
+                save_forecast, check_db, delete_past_forecasts)
 
 def _normalize(address):
     """'  Copacabana,  RIO ' -> 'copacabana, rio' so trivial differences count as copies."""
@@ -119,6 +120,16 @@ def plan_outfits(clothes, forecast, average_temp):
 
     return dict(sorted(result.items()))  # back to date order
 
-def startup_check():                                                        # NEW
+def startup_check():
     """Checks the database connection when the server starts."""
     return check_db()
+
+def cleanup_past_forecasts():
+    """Removes forecast days that have already passed. Never raises."""
+    try:
+        deleted = delete_past_forecasts()
+        logging.info("Cleanup: %d past forecast documents deleted", deleted)
+        return deleted
+    except PyMongoError as e:
+        logging.warning("Cleanup failed: %s", e)
+        return 0

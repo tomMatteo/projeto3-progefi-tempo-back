@@ -1,8 +1,12 @@
-from utils import (
-    load_items, save_item,
-    load_trip, save_trip, update_trip,
-    address_to_coords, get_forecast
-)
+import logging
+from pymongo.errors import PyMongoError
+from apscheduler.schedulers.background import BackgroundScheduler
+from utils import (address_to_coords, get_forecast, save_forecast, 
+                check_db, delete_past_forecasts, load_forecast)
+
+
+_scheduler = None
+
 
 def _normalize(address):
     """'  Copacabana,  RIO ' -> 'copacabana, rio' so trivial differences count as copies."""
@@ -15,13 +19,29 @@ def forecast_for_itinerary(itinerary):
     Raises ValueError (address not found) or requests.RequestException (API down)."""
 
     # 1) Remove copies: one entry per distinct address
-    unique = {_normalize(addr) for addr in itinerary.values()}
+    dates_by_addr = {}
+    for date, addr in itinerary.items():
+        dates_by_addr.setdefault(_normalize(addr), set()).add(date)
 
     # 2) Per distinct address: coordinates first, then the forecast
     forecasts = {}
-    for addr in unique:
+    for addr, dates in dates_by_addr.items():
         lat, lon = address_to_coords(addr)
-        forecasts[addr] = get_forecast(lat, lon)
+
+        try:
+            cached = load_forecast(lat, lon, dates)
+        except PyMongoError as e:
+            logging.warning("Could not read forecast cache: %s", e)
+            cached = {}
+
+        if dates <= set(cached):
+            forecasts[addr] = cached
+        else:
+            forecasts[addr] = get_forecast(lat, lon)
+            try:
+                save_forecast(lat, lon, forecasts[addr])
+            except PyMongoError as e:
+                logging.warning("Could not save forecast: %s", e)
 
     # 3) Link each day to its address and that address's max and min
     result = {}
@@ -31,6 +51,7 @@ def forecast_for_itinerary(itinerary):
             "address": addr,
             "max": day["max"] if day else None,
             "min": day["min"] if day else None,
+            "rain": day["rain"] if day else None,
         }
     return result
 
@@ -65,6 +86,7 @@ def plan_outfits(clothes, forecast, average_temp):
         "second_skin": -10,  # d_min <= -10: add second skin
         "heavy_coat": -14,   # d_min <= -14: heavy coat instead of coat, and gloves
     }
+    RAIN_WARNING_PROB = 60
     stock = dict(clothes)  # copy, so the caller's dict is not changed
 
     # Temperature of each day relative to the user's average
@@ -108,7 +130,34 @@ def plan_outfits(clothes, forecast, average_temp):
         if d_min <= THRESHOLDS["heavy_coat"]:
             if not _take(stock, "gloves", outfit):
                 notes.append("Very cold day but no gloves left")
-
+        rain = forecast[date]["rain"]
+        if rain is not None and rain >= RAIN_WARNING_PROB:
+            notes.append(f"High chance of rain ({rain}%): Prepare acoordingly")
         result[date] = {"outfit": outfit, "notes": notes}
 
     return dict(sorted(result.items()))  # back to date order
+
+def startup_check():
+    """Checks the database connection when the server starts."""
+    return check_db()
+
+def cleanup_past_forecasts():
+    """Removes forecast days that have already passed. Never raises."""
+    try:
+        deleted = delete_past_forecasts()
+        logging.info("Cleanup: %d past forecast documents deleted", deleted)
+        return deleted
+    except PyMongoError as e:
+        logging.warning("Cleanup failed: %s", e)
+        return 0
+
+def start_cleanup_scheduler():
+    """Runs the cleanup once now and then every day at 03:00 UTC. Safe to call twice."""
+    global _scheduler
+    if _scheduler is not None:
+        return
+    _scheduler = BackgroundScheduler(timezone="UTC")
+    _scheduler.add_job(cleanup_past_forecasts)
+    _scheduler.add_job(cleanup_past_forecasts, "cron", hour=3, minute=0,
+                       misfire_grace_time=3600, coalesce=True)         # daily
+    _scheduler.start()

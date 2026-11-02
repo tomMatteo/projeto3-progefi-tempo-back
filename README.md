@@ -24,6 +24,7 @@ open-meteo.com
 
 
 ## Membros:
+- Eduardo Khaled
 - Gabriel Rocha
 - João Espioni
 - Leonardo Meirelles

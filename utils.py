@@ -4,105 +4,61 @@ import uuid
 import requests
 import time
 from dotenv import load_dotenv
+from pymongo import MongoClient, UpdateOne 
+from pymongo.errors import PyMongoError
+from datetime import datetime, timedelta, timezone 
 
 load_dotenv()
 
 UA =   {"User-Agent": f"trip-planner/0.1 ({os.environ.get('NOMINATIM_CONTACT', 'no-contact')})"} #Imports from env contact use for call
-_last_call = 0.0  # time of the last Nominatim request
+_last_call = 0.0  # time of the last Nominatim request      
+_client = MongoClient(os.environ["MONGO_URI"], serverSelectionTimeoutMS=5000)
+db = _client["trip_planner"]
 
-
-# ---------- temporary in-memory storage (replace with MongoDB later) ----------
-# Data is lost every time the server restarts.
-_items = {}   # id -> item dict
-_trips = {}   # id -> trip dict
-
-
-def _new_id():
-    return uuid.uuid4().hex
-
-
-# ---------- items ----------
-def load_items(user_id):
-    return [copy.deepcopy(i) for i in _items.values() if i["user_id"] == user_id]
-
-
-def load_item(item_id, user_id):
-    item = _items.get(item_id)
-    return copy.deepcopy(item) if item and item["user_id"] == user_id else None
-
-
-def save_item(data):
-    data = copy.deepcopy(data)
-    data["_id"] = _new_id()
-    _items[data["_id"]] = data
-    return data["_id"]
-
-
-def update_item(item_id, user_id, fields):
-    item = _items.get(item_id)
-    if not item or item["user_id"] != user_id:
+def check_db():
+    """Pings MongoDB. Returns True if reachable, False otherwise."""
+    try:
+        _client.admin.command("ping")
+        print("MongoDB connected")
+        return True
+    except PyMongoError as e:
+        print(f"MongoDB connection failed: {e}")
         return False
-    item.update(fields)
-    return True
 
 
-def remove_item(item_id, user_id):
-    item = _items.get(item_id)
-    if not item or item["user_id"] != user_id:
-        return False
-    del _items[item_id]
-    return True
+def save_forecast(lat, lon, forecast):
+    """Saves {date: {"max", "min", "rain"}} for one location, one document per day.
+    Raises pymongo.errors.PyMongoError if the database can't be reached."""
+    ops = [
+        UpdateOne(
+            {"_id": f"{lat:.5f},{lon:.5f},{date}"},
+            {"$set": {"lat": lat, "lon": lon, "date": date,
+                      "max": f["max"], "min": f["min"], "rain": f["rain"]}},
+            upsert=True,
+        )
+        for date, f in forecast.items()
+    ]
+    if ops:
+        db.forecasts.bulk_write(ops)
 
+def delete_past_forecasts(margin_days=1):
+    """Deletes stored forecast days that have already passed.
+    Returns how many documents were deleted.
+    Raises pymongo.errors.PyMongoError if the database can't be reached."""
+    today = datetime.now(timezone.utc).date()
+    cutoff = (today - timedelta(days=margin_days)).isoformat()
+    result = db.forecasts.delete_many({"date": {"$lt": cutoff}})
+    return result.deleted_count
 
-# ---------- trips ----------
-def load_trips(user_id):
-    return [copy.deepcopy(t) for t in _trips.values() if t["user_id"] == user_id]
-
-
-def load_trip(trip_id, user_id):
-    trip = _trips.get(trip_id)
-    return copy.deepcopy(trip) if trip and trip["user_id"] == user_id else None
-
-
-def save_trip(data):
-    data = copy.deepcopy(data)
-    data["_id"] = _new_id()
-    _trips[data["_id"]] = data
-    return data["_id"]
-
-
-def update_trip(trip_id, user_id, fields):
-    trip = _trips.get(trip_id)
-    if not trip or trip["user_id"] != user_id:
-        return False
-    trip.update(fields)
-    return True
-
-
-def remove_trip(trip_id, user_id):
-    trip = _trips.get(trip_id)
-    if not trip or trip["user_id"] != user_id:
-        return False
-    del _trips[trip_id]
-    return True
-
+def load_forecast(lat, lon, dates):                                 # NEW
+    """Returns {date: {"max", "min", "rain"}} for the dates already stored for
+    these coordinates. Dates not in the database are simply missing from the result.
+    Raises pymongo.errors.PyMongoError if the database can't be reached."""
+    ids = [f"{lat:.5f},{lon:.5f},{d}" for d in dates]               # same _id format as save_forecast
+    docs = db.forecasts.find({"_id": {"$in": ids}})
+    return {d["date"]: {"max": d["max"], "min": d["min"], "rain": d["rain"]} for d in docs}
 
 # ---------- external APIs ----------
-def geocode(address):
-    """Nominatim: address -> list of {label, lat, lon} candidates."""
-    r = requests.get(
-        "https://nominatim.openstreetmap.org/search",
-        params={"q": address, "format": "jsonv2", "limit": 5, "countrycodes": "br"},
-        headers=UA,
-        timeout=10,
-    )
-    r.raise_for_status()
-    return [
-        {"label": p["display_name"], "lat": float(p["lat"]), "lon": float(p["lon"])}
-        for p in r.json()
-    ]
-
-
 def get_forecast(lat, lon):
     """Coordinates -> {"2026-10-28": {"max": 27.1, "min": 19.4}, ...} (up to 16 days).
     Raises requests.RequestException if Open-Meteo is unreachable or returns an error."""
@@ -111,7 +67,7 @@ def get_forecast(lat, lon):
         params={
             "latitude": lat,
             "longitude": lon,
-            "daily": "temperature_2m_max,temperature_2m_min",
+            "daily": "apparent_temperature_max,apparent_temperature_min,precipitation_probability_max",
             "forecast_days": 16,
             "timezone": "auto",
         },
@@ -120,9 +76,11 @@ def get_forecast(lat, lon):
     r.raise_for_status()
     daily = r.json()["daily"]
     return {
-        day: {"max": tmax, "min": tmin}
-        for day, tmax, tmin in zip(
-            daily["time"], daily["temperature_2m_max"], daily["temperature_2m_min"]
+        day: {"max": tmax, "min": tmin, "rain": rain}
+        for day, tmax, tmin, rain in zip(
+            daily["time"], daily["apparent_temperature_max"],
+            daily["apparent_temperature_min"],
+            daily["precipitation_probability_max"],
         )
     }
 

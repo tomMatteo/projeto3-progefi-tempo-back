@@ -182,6 +182,16 @@ def get_forecast(lat, lon):
         raise requests.RequestException("unexpected Open-Meteo response") from e
 
 
+def address_to_coords(address):
+    """Address -> (lat, lon) as floats.
+    Raises ValueError if the address is empty or not found.
+    Raises requests.RequestException if Nominatim is unreachable or returns an error."""
+    global _last_call
+
+    text = address.strip()
+    if not text:
+        raise ValueError("empty address")
+
     # Nominatim's policy allows about 1 request per second (the lock keeps this true across threads)
     with _nominatim_lock:
         wait = 1.0 - (time.monotonic() - _last_call)

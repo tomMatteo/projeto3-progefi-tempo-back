@@ -2,7 +2,7 @@
 
 ### BACKEND DO PROJETO 3 DE PROGRAMAÇÃO EFICAZ
 
-**Link da API (AWS):** _preencher após o deploy_ (ex.: `http://IP-OU-DOMINIO:PORTA`)
+**Link da API (AWS):** http://52.73.92.136
 
 O objetivo dessa API é receber três coisas:
 - Um roteiro: para cada dia da viagem, o endereço (ou cidade) onde a pessoa estará

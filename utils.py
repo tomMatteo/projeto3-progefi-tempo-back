@@ -14,8 +14,10 @@ load_dotenv()
 NOMINATIM_CONTACT = os.environ.get("NOMINATIM_CONTACT")
 UA = {"User-Agent": f"trip-planner/0.1 ({NOMINATIM_CONTACT or 'no-contact'})"}
 _last_call = 0.0  # monotonic time of the last Nominatim request
+_client = None  # MongoClient, created on first use by get_db()
 _nominatim_lock = threading.Lock()  # keeps the 1 request/second rule true across threads
 
+PLAN_TTL_SECONDS = 3600                  # plans expire 1 hour after creation
 FORECAST_TTL_SECONDS = 3 * 3600          # cached forecasts are refreshed after 3 hours
 GEOCODE_TTL_SECONDS = 30 * 24 * 3600     # cached coordinates last 30 days
 
@@ -105,6 +107,7 @@ def save_forecast(lat, lon, forecast):
     now = datetime.now(timezone.utc)
     ops = [
         UpdateOne(
+            {"_id": f"{lat:.5f},{lon:.5f},{date}"},   # same _id format load_forecast reads
             {"$set": {"lat": lat, "lon": lon, "date": date,
                       "max": f["max"], "min": f["min"], "rain": f["rain"],
                       "fetched_at": now}},
@@ -182,16 +185,12 @@ def get_forecast(lat, lon):
         raise requests.RequestException("unexpected Open-Meteo response") from e
 
 
-def address_to_coords(address):
-    """Address -> (lat, lon) as floats.
-    Raises ValueError if the address is empty or not found.
-    Raises requests.RequestException if Nominatim is unreachable or returns an error."""
+
+
+def address_to_coords(text):
+    """Address -> (lat, lon) using Nominatim.
+    Raises ValueError if the address is not found, or requests.RequestException if Nominatim fails."""
     global _last_call
-
-    text = address.strip()
-    if not text:
-        raise ValueError("empty address")
-
     # Nominatim's policy allows about 1 request per second (the lock keeps this true across threads)
     with _nominatim_lock:
         wait = 1.0 - (time.monotonic() - _last_call)
